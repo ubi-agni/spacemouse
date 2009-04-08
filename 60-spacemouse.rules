@@ -1,0 +1,9 @@
+# udev rules for 3D Navigation devices (6dof)
+#
+# written for the 3DConnexion Space Navigator -
+# and hopefully some of their other devices.
+#
+# 2006-12-28, Simon Budig
+
+KERNEL=="event[0-9]*", ATTRS{name}=="3Dconnexion Space*", SYMLINK+="input/spacemouse", MODE="0666"
+
