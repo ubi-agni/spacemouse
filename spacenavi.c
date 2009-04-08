@@ -28,6 +28,14 @@
 
 #define test_bit(bit, array)  (array [bit / 8] & (1 << (bit % 8)))
 
+typedef struct snavi_dev {
+   int fd;
+   int idLED;
+   int iLast;
+   unsigned int iDelta; // threshold
+} snavi_dev_t;
+
+#define CAST(v) ((snavi_dev_t*)v)
 
 static int _snavi_probe(const char* pcName) {
    char name[256]= "Unknown";
@@ -47,7 +55,7 @@ error:
    return -1;
 }
 
-snavi_dev_t* snavi_open (const char* pcName) {
+void* snavi_open (const char* pcName) {
    u_int8_t led_bitmask[(LED_MAX + 7) / 8];
    snavi_dev_t* dev = (snavi_dev_t*) malloc(sizeof(snavi_dev_t));
 
@@ -80,17 +88,37 @@ snavi_dev_t* snavi_open (const char* pcName) {
       }
    }
 
+   dev->iDelta = 0;
    return dev;
 }
 
-void snavi_close(snavi_dev_t* dev) {
+void snavi_close(void* v) {
+   snavi_dev_t* dev = CAST(v);
    if (!dev) return;
-   snavi_set_led (dev, 1);
+   snavi_set_led (dev, 0);
    close (dev->fd);
    free (dev);
 }
 
-int snavi_set_led (snavi_dev_t* dev, int led_state) {
+int snavi_get_fd(void* v) {
+   snavi_dev_t* dev = CAST(v);
+   if (!dev) return -1;
+   return dev->fd;
+}
+
+void snavi_set_threshold(void* v, unsigned int iDelta) {
+   snavi_dev_t* dev = CAST(v);
+   if (!dev) return;
+   dev->iDelta = iDelta;
+}
+unsigned int snavi_get_threshold(void* v) {
+   snavi_dev_t* dev = CAST(v);
+   if (!dev) return 0;
+   return dev->iDelta;
+}
+
+int snavi_set_led (void* v, int led_state) {
+   snavi_dev_t* dev = CAST(v);
    struct input_event event;
    int ret;
    
@@ -105,33 +133,37 @@ int snavi_set_led (snavi_dev_t* dev, int led_state) {
    return ret < sizeof (struct input_event);
 }
 
-int  snavi_get_event (snavi_dev_t* dev, snavi_event_t* snavi_event) {
+int  snavi_get_event (void* v, snavi_event_t* ev) {
+   snavi_dev_t* dev = CAST(v);
    struct input_event event;
-   snavi_event->code = 0;
-   snavi_event->axes[0] = snavi_event->axes[1] = snavi_event->axes[2] = 0;
+   ev->code = 0; ev->type = 0;
+   if (!dev) return -1;
 
    while (1) {
       if (read (dev->fd, &event, sizeof (struct input_event)) < 0) {
+         if (errno == EAGAIN) return ev->type;
          perror ("read error");
          return -1;
       }
 
       switch (event.type) {
         case EV_REL:
-           if (event.code <= REL_Z) {
-              snavi_event->axes[event.code - REL_X] = event.value;
-              snavi_event->code |= (1 << (event.code - REL_X));
-           } else if (event.code <= REL_RZ) {
-              snavi_event->axes[event.code - REL_RX] = event.value;
-              snavi_event->code |= (1 << (event.code - REL_X));
+           if (event.code <= REL_RZ) {
+              if (event.value >= 0) {
+                 if ((event.value -= dev->iDelta) < 0) event.value = 0;
+              } else {
+                 if ((event.value += dev->iDelta) > 0) event.value = 0;
+              }
+              ev->axes[event.code - REL_X] = event.value;
+              ev->code |= (1 << (event.code - REL_X));
            }
            break;
 
         case EV_KEY:
-           snavi_event->type = (event.value ? ButtonPressEvent : ButtonReleaseEvent);
-           snavi_event->code = event.code;
-           snavi_event->time = event.time;
-           return snavi_event->type;
+           ev->type = (event.value ? ButtonPressEvent : ButtonReleaseEvent);
+           ev->code = event.code;
+           ev->time = event.time;
+           return ev->type;
            break;
 
         case EV_SYN:
@@ -139,9 +171,27 @@ int  snavi_get_event (snavi_dev_t* dev, snavi_event_t* snavi_event) {
             * input system sends multiple EV_REL events. EV_SYN
             * then indicates that all changes have been reported.
             */
-           snavi_event->time = event.time;
-           snavi_event->type = MotionEvent;
-           return snavi_event->type;
+           ev->time = event.time;
+           ev->type = MotionEvent;
+
+           if (ev->code & TranslationMotion) {
+              dev->iLast = TranslationMotion;
+           } else if (ev->code & RotationMotion) {
+              dev->iLast = RotationMotion;
+           } else {
+              if (dev->iLast == TranslationMotion) {
+                 memset (ev->axes+3, 0, 3*sizeof(int));
+                 dev->iLast = RotationMotion;
+              } else if (dev->iLast == RotationMotion) {
+                 memset (ev->axes, 0, 3*sizeof(int));
+                 dev->iLast = TranslationMotion;
+              }
+           }
+            
+           return ev->type;
+           break;
+        default:
+           return (ev->type = 0);
            break;
       }
    }
@@ -150,53 +200,39 @@ int  snavi_get_event (snavi_dev_t* dev, snavi_event_t* snavi_event) {
 #ifdef TEST
 int main (int argc, char *argv[])
 {
-   int axes[6];
-   snavi_dev_t*  dev = snavi_open (NULL);
+   int iPress=0;
+   snavi_dev_t* dev = CAST(snavi_open (NULL));
    snavi_event_t e;
    if (!dev) {
       perror ("could not open spacemouse device");
       exit(-1);
    }
-   memset(axes, 0, 6*sizeof(int));
+   memset(e.axes, 0, 6*sizeof(int));
+
+   // set threshold
+   if (argc >= 2) snavi_set_threshold(dev, atoi(argv[1]));
 
    snavi_set_led (dev, 1);
-   while (snavi_get_event(dev, &e) >= 0) {
+   while (iPress < 3 && snavi_get_event(dev, &e) >= 0) {
       switch (e.type) {
         case ButtonPressEvent:
+           iPress++;
         case ButtonReleaseEvent: 
            fprintf (stderr, "button: %d %s\n", e.code, 
                     e.type==ButtonPressEvent ? "pressed" : "released");
            break;
         case MotionEvent:
-           if (e.code & TranslationMotion) {
-              axes[0] = e.axes[0];
-              axes[1] = e.axes[1];
-              axes[2] = e.axes[2];
-              dev->iLast = TranslationMotion;
-           } else if (e.code & RotationMotion) {
-              axes[3] = e.axes[0];
-              axes[4] = e.axes[1];
-              axes[5] = e.axes[2];
-              dev->iLast = RotationMotion;
-           } else {
-              if (dev->iLast == TranslationMotion) {
-                 memset (axes+3, 0, 3*sizeof(int));
-                 dev->iLast = RotationMotion;
-              } else if (dev->iLast == RotationMotion) {
-                 memset (axes, 0, 3*sizeof(int));
-                 dev->iLast = TranslationMotion;
-              }
-           }
            fprintf (stderr, "\nState: %c%c %c%c  %4d %4d %4d %4d %4d %4d",
                     e.code & TranslationMotion ? 'T' : ' ',
                     e.code & RotationMotion ? 'R' : ' ',
                     dev->iLast & TranslationMotion ? 'T' : ' ',
                     dev->iLast & RotationMotion ? 'R' : ' ',
-                    axes[0], axes[1], axes[2], axes[3], axes[4], axes[5]);
+                    e.axes[0], e.axes[1], e.axes[2], e.axes[3], e.axes[4], e.axes[5]);
+           if (e.code) iPress = 0;
            break;
       }
    }
-
+   snavi_set_led (dev, 0);
    snavi_close (dev);
    exit (0);
 }

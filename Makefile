@@ -1,3 +1,5 @@
+spacenavi.c: spacenavi.h
+
 spacenavi: CFLAGS += -DTEST
 spacenavi: spacenavi.c
 	$(CC) $(CFLAGS) -o $@ $^
