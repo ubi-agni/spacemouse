@@ -1,3 +1,6 @@
+.PHONY: all
+all: spacenavi lib
+
 spacenavi.c: spacenavi.h
 
 spacenavi: CFLAGS += -DTEST
