@@ -1,6 +1,12 @@
+#ifndef SPACENAVI_2343242342342_H
+#define SPACENAVI_2343242342342_H 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <time.h>
+#include <sys/time.h>
 
 enum snavi_event_types {
    MotionEvent = 1,
@@ -32,3 +38,6 @@ unsigned int snavi_get_threshold(void* v);
 #ifdef __cplusplus
 }
 #endif
+
+#endif
+
