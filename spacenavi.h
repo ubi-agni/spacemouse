@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-#include <time.h>
 #include <sys/time.h>
+#include <time.h>
 
 enum snavi_event_types {
    MotionEvent = 1,
