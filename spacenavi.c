@@ -37,9 +37,9 @@ typedef struct snavi_dev {
 
 #define CAST(v) ((snavi_dev_t*)v)
 
-static int _snavi_probe(const char* pcName) {
+static int _snavi_probe(const char* pcName, int flags) {
    char name[256]= "Unknown";
-   int  fd = open (pcName, O_RDONLY);
+   int  fd = open (pcName, O_RDONLY | flags);
    if (fd < 0) return fd;
 
    if (ioctl (fd, EVIOCGNAME (sizeof (name)), name) < 0)
@@ -47,7 +47,7 @@ static int _snavi_probe(const char* pcName) {
    
    if (strstr(name, "3Dconnexion") && strstr(name, "Space")) {
       close(fd);
-      return open (pcName, O_RDWR); // re-open RDWR
+      return open (pcName, O_RDWR | flags); // re-open RDWR
    }
    
 error:
@@ -55,9 +55,11 @@ error:
    return -1;
 }
 
-void* snavi_open (const char* pcName) {
+void* snavi_open (const char* pcName, int flags) {
    u_int8_t led_bitmask[(LED_MAX + 7) / 8];
    snavi_dev_t* dev = (snavi_dev_t*) malloc(sizeof(snavi_dev_t));
+
+   flags = flags & O_NONBLOCK;
 
    if (!dev) return NULL;
    dev->fd = -1;
@@ -65,12 +67,12 @@ void* snavi_open (const char* pcName) {
    dev->iLast = 0;
 
    if (pcName) { // file explicitly requested
-      dev->fd = _snavi_probe(pcName);
-   } else if ((dev->fd = _snavi_probe("/dev/input/spacemouse")) < 0) {
+      dev->fd = _snavi_probe(pcName, flags);
+   } else if ((dev->fd = _snavi_probe("/dev/input/spacemouse", flags)) < 0) {
       char file[256]; int i;
       for (i=0; i < 20; i++) {
          snprintf(file, 256, "/dev/input/event%d", i);
-         if ((dev->fd = _snavi_probe(file)) >= 0) break;
+         if ((dev->fd = _snavi_probe(file, flags)) >= 0) break;
       }
       if (dev->fd >= 0) fprintf (stderr, "found spacemouse at: %s\n", file);
    }
@@ -201,7 +203,7 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
 int main (int argc, char *argv[])
 {
    int iPress=0;
-   snavi_dev_t* dev = CAST(snavi_open (NULL));
+   snavi_dev_t* dev = CAST(snavi_open (NULL, 0));
    snavi_event_t e;
    if (!dev) {
       perror ("could not open spacemouse device");

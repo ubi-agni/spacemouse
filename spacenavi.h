@@ -25,7 +25,11 @@ typedef struct snavi_event {
    int axes[6];
 } snavi_event_t;
 
-void* snavi_open (const char* pcName);
+/**
+	Right now, only O_NONBLOCK flag is supported (or no flags
+	at all).
+*/
+void* snavi_open (const char* pcName, int flags);
 void  snavi_close(void* dev);
 int   snavi_get_fd(void* dev);
 

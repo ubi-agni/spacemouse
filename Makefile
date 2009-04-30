@@ -1,3 +1,5 @@
+PREFIX ?= /vol/nirobots
+
 .PHONY: all
 all: spacenavi lib
 
@@ -12,8 +14,8 @@ libspacenavi.a: spacenavi.o
 	ar r libspacenavi.a spacenavi.o
 
 install: libspacenavi.a
-	cp libspacenavi.a /vol/nirobots/lib
-	cp spacenavi.h /vol/nirobots/include
+	cp libspacenavi.a $(PREFIX)/lib
+	cp spacenavi.h $(PREFIX)/include
 
 clean:
 	rm -f *.a *.o spacenavi
