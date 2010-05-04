@@ -39,6 +39,8 @@ int  snavi_get_event (void* dev, snavi_event_t* event);
 void snavi_set_threshold(void* v, unsigned int iDelta);
 unsigned int snavi_get_threshold(void* v);
 
+void snavi_calibrate(void* v);
+
 #ifdef __cplusplus
 }
 #endif

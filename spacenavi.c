@@ -33,6 +33,7 @@ typedef struct snavi_dev {
    int idLED;
    int iLast;
    unsigned int iDelta; // threshold
+	int offset[6];
 } snavi_dev_t;
 
 #define CAST(v) ((snavi_dev_t*)v)
@@ -91,6 +92,9 @@ void* snavi_open (const char* pcName, int flags) {
    }
 
    dev->iDelta = 0;
+	memset(dev->offset, 0, 6*sizeof(int));
+
+	snavi_calibrate (dev);
    return dev;
 }
 
@@ -117,6 +121,51 @@ unsigned int snavi_get_threshold(void* v) {
    snavi_dev_t* dev = CAST(v);
    if (!dev) return 0;
    return dev->iDelta;
+}
+
+void snavi_calibrate(void* v) {
+   snavi_dev_t* dev = CAST(v);
+   if (!dev) return;
+
+   fd_set         rfds;
+   struct timeval tv;
+
+   FD_ZERO(&rfds);
+   FD_SET(dev->fd, &rfds);
+
+	// wait 100ms at most
+	tv.tv_sec = 0;
+	tv.tv_usec = 100;
+		
+	// reset threshold
+	unsigned int theta = snavi_get_threshold(dev);
+	snavi_set_threshold(dev, 0);
+	
+	// reset offset
+	int offset[6];
+	memset(offset, 0, 6*sizeof(int));
+	memset(dev->offset, 0, 6*sizeof(int));
+
+	// try to get data from device
+	snavi_event_t e;
+	unsigned short code = 0;
+	memset(e.axes, 0, 6*sizeof(int));
+
+	// loop until time is left
+	while (select(dev->fd+1, &rfds, NULL, NULL, &tv) > 0) {
+		snavi_get_event(dev, &e);
+      if (e.type == MotionEvent) {
+			if (e.code & TranslationMotion) memcpy(offset, e.axes, 3*sizeof(int));
+			if (e.code & RotationMotion) memcpy(offset+3, e.axes+3, 3*sizeof(int));
+			code |= e.code;
+			// break from loop, if we got data for both motion types
+			if ((code & TranslationMotion) && (code & RotationMotion)) break;
+		}
+	}
+	// store new offset
+	memcpy (dev->offset, offset, 6*sizeof(int));
+	// restore threshold
+	snavi_set_threshold(dev, theta);
 }
 
 int snavi_set_led (void* v, int led_state) {
@@ -152,14 +201,16 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
       switch (event.type) {
         case EV_REL:
            if (event.code <= REL_RZ) {
+				  unsigned int iAxes = event.code - REL_X;
+				  event.value -= dev->offset[iAxes];
               if (event.value >= 0) {
                  if ((event.value -= dev->iDelta) < 0) event.value = 0;
               } else {
                  if ((event.value += dev->iDelta) > 0) event.value = 0;
               }
-              ev->axes[event.code - REL_X] = event.value;
-              code |= (1 << (event.code - REL_X));
-				  if (event.value) ev->code |= (1 << (event.code - REL_X));
+              ev->axes[iAxes] = event.value;
+              code |= (1 << iAxes);
+				  if (event.value) ev->code |= (1 << iAxes);
            }
            break;
 
