@@ -141,6 +141,7 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
    ev->code = 0; ev->type = 0;
    if (!dev) return -1;
 
+	unsigned short code=0;
    while (1) {
       if (read (dev->fd, &event, sizeof (struct input_event)) < 0) {
          if (errno == EAGAIN) return ev->type;
@@ -157,7 +158,8 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
                  if ((event.value += dev->iDelta) > 0) event.value = 0;
               }
               ev->axes[event.code - REL_X] = event.value;
-              ev->code |= (1 << (event.code - REL_X));
+              code |= (1 << (event.code - REL_X));
+				  if (event.value) ev->code |= (1 << (event.code - REL_X));
            }
            break;
 
@@ -174,11 +176,13 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
             * then indicates that all changes have been reported.
             */
            ev->time = event.time;
-           ev->type = MotionEvent;
+           if (ev->code) ev->type = MotionEvent;
 
-           if (ev->code & TranslationMotion) {
+			  // linux reports translational and rotational axes intermittendly
+			  // here we keep track of the last transmitted type
+           if (code & TranslationMotion) {
               dev->iLast = TranslationMotion;
-           } else if (ev->code & RotationMotion) {
+           } else if (code & RotationMotion) {
               dev->iLast = RotationMotion;
            } else {
               if (dev->iLast == TranslationMotion) {
@@ -189,11 +193,11 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
                  dev->iLast = TranslationMotion;
               }
            }
-            
+			  
            return ev->type;
            break;
         default:
-           return (ev->type = 0);
+           return 0;
            break;
       }
    }
@@ -220,11 +224,11 @@ int main (int argc, char *argv[])
         case ButtonPressEvent:
            iPress++;
         case ButtonReleaseEvent: 
-           fprintf (stderr, "button: %d %s\n", e.code, 
+           fprintf (stderr, "\nbutton: %d %s\n", e.code, 
                     e.type==ButtonPressEvent ? "pressed" : "released");
            break;
         case MotionEvent:
-           fprintf (stderr, "\nState: %c%c %c%c  %4d %4d %4d %4d %4d %4d",
+           fprintf (stderr, "\rState: %c%c %c%c  %4d %4d %4d %4d %4d %4d",
                     e.code & TranslationMotion ? 'T' : ' ',
                     e.code & RotationMotion ? 'R' : ' ',
                     dev->iLast & TranslationMotion ? 'T' : ' ',
