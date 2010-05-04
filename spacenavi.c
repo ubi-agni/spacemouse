@@ -135,7 +135,7 @@ void snavi_calibrate(void* v) {
 
 	// wait 100ms at most
 	tv.tv_sec = 0;
-	tv.tv_usec = 100;
+	tv.tv_usec = 100000;
 		
 	// reset threshold
 	unsigned int theta = snavi_get_threshold(dev);
