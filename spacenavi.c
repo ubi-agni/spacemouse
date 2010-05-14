@@ -168,6 +168,15 @@ void snavi_calibrate(void* v) {
 	snavi_set_threshold(dev, theta);
 }
 
+int snavi_is_calibrated(void* v) {
+   snavi_dev_t* dev = CAST(v);
+   if (!dev) return 0;
+
+	int i;
+	for (i=0; i < 6; ++i) if (dev->offset[i]) return 0;
+	return 1;
+}
+
 int snavi_set_led (void* v, int led_state) {
    snavi_dev_t* dev = CAST(v);
    struct input_event event;
