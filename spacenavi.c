@@ -208,57 +208,61 @@ int  snavi_get_event (void* v, snavi_event_t* ev) {
       }
 
       switch (event.type) {
-        case EV_REL:
-           if (event.code <= REL_RZ) {
-				  unsigned int iAxes = event.code - REL_X;
-				  event.value -= dev->offset[iAxes];
-              if (event.value >= 0) {
-                 if ((event.value -= dev->iDelta) < 0) event.value = 0;
-              } else {
-                 if ((event.value += dev->iDelta) > 0) event.value = 0;
-              }
-              ev->axes[iAxes] = event.value;
-              code |= (1 << iAxes);
-				  if (event.value) ev->code |= (1 << iAxes);
-           }
-           break;
+			case EV_REL:
+			case EV_ABS:
+			{
+				unsigned short FIRST = event.type == EV_REL ? REL_X : ABS_X;
+				unsigned short LAST  = event.type == EV_REL ? REL_RZ : ABS_RZ;
+				if (event.code <= LAST) {
+					unsigned int iAxes = event.code - FIRST;
+					event.value -= dev->offset[iAxes];
+					if (event.value >= 0) {
+						if ((event.value -= dev->iDelta) < 0) event.value = 0;
+					} else {
+						if ((event.value += dev->iDelta) > 0) event.value = 0;
+					}
+					ev->axes[iAxes] = event.value;
+					code |= (1 << iAxes);
+					if (event.value) ev->code |= (1 << iAxes);
+				}
+				break;
+			}
+			case EV_KEY:
+				ev->type = (event.value ? ButtonPressEvent : ButtonReleaseEvent);
+				ev->code = event.code;
+				ev->time = event.time;
+				return ev->type;
+				break;
 
-        case EV_KEY:
-           ev->type = (event.value ? ButtonPressEvent : ButtonReleaseEvent);
-           ev->code = event.code;
-           ev->time = event.time;
-           return ev->type;
-           break;
+			case EV_SYN:
+				/* if multiple axes change simultaneously the linux
+				 * input system sends multiple EV_REL events. EV_SYN
+				 * then indicates that all changes have been reported.
+				 */
+				ev->time = event.time;
+				if (ev->code) ev->type = MotionEvent;
 
-        case EV_SYN:
-           /* if multiple axes change simultaneously the linux
-            * input system sends multiple EV_REL events. EV_SYN
-            * then indicates that all changes have been reported.
-            */
-           ev->time = event.time;
-           if (ev->code) ev->type = MotionEvent;
-
-			  // linux reports translational and rotational axes intermittendly
-			  // here we keep track of the last transmitted type
-           if (code & TranslationMotion) {
-              dev->iLast = TranslationMotion;
-           } else if (code & RotationMotion) {
-              dev->iLast = RotationMotion;
-           } else {
-              if (dev->iLast == TranslationMotion) {
-                 memset (ev->axes+3, 0, 3*sizeof(int));
-                 dev->iLast = RotationMotion;
-              } else if (dev->iLast == RotationMotion) {
-                 memset (ev->axes, 0, 3*sizeof(int));
-                 dev->iLast = TranslationMotion;
-              }
-           }
+				// linux reports translational and rotational axes intermittendly
+				// here we keep track of the last transmitted type
+				if (code & TranslationMotion) {
+					dev->iLast = TranslationMotion;
+				} else if (code & RotationMotion) {
+					dev->iLast = RotationMotion;
+				} else {
+					if (dev->iLast == TranslationMotion) {
+						memset (ev->axes+3, 0, 3*sizeof(int));
+						dev->iLast = RotationMotion;
+					} else if (dev->iLast == RotationMotion) {
+						memset (ev->axes, 0, 3*sizeof(int));
+						dev->iLast = TranslationMotion;
+					}
+				}
 			  
-           return ev->type;
-           break;
-        default:
-           return 0;
-           break;
+				return ev->type;
+				break;
+			default:
+				return 0;
+				break;
       }
    }
 }
@@ -281,21 +285,21 @@ int main (int argc, char *argv[])
    snavi_set_led (dev, 1);
    while (iPress < 3 && snavi_get_event(dev, &e) >= 0) {
       switch (e.type) {
-        case ButtonPressEvent:
-           iPress++;
-        case ButtonReleaseEvent: 
-           fprintf (stderr, "\nbutton: %d %s\n", e.code, 
-                    e.type==ButtonPressEvent ? "pressed" : "released");
-           break;
-        case MotionEvent:
-           fprintf (stderr, "\rState: %c%c %c%c  %4d %4d %4d %4d %4d %4d",
-                    e.code & TranslationMotion ? 'T' : ' ',
-                    e.code & RotationMotion ? 'R' : ' ',
-                    dev->iLast & TranslationMotion ? 'T' : ' ',
-                    dev->iLast & RotationMotion ? 'R' : ' ',
-                    e.axes[0], e.axes[1], e.axes[2], e.axes[3], e.axes[4], e.axes[5]);
-           if (e.code) iPress = 0;
-           break;
+			case ButtonPressEvent:
+				iPress++;
+			case ButtonReleaseEvent: 
+				fprintf (stderr, "\nbutton: %d %s\n", e.code, 
+							e.type==ButtonPressEvent ? "pressed" : "released");
+				break;
+			case MotionEvent:
+				fprintf (stderr, "\rState: %c%c %c%c  %4d %4d %4d %4d %4d %4d",
+							e.code & TranslationMotion ? 'T' : ' ',
+							e.code & RotationMotion ? 'R' : ' ',
+							dev->iLast & TranslationMotion ? 'T' : ' ',
+							dev->iLast & RotationMotion ? 'R' : ' ',
+							e.axes[0], e.axes[1], e.axes[2], e.axes[3], e.axes[4], e.axes[5]);
+				if (e.code) iPress = 0;
+				break;
       }
    }
    snavi_set_led (dev, 0);
