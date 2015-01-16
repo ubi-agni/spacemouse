@@ -1,4 +1,5 @@
 PREFIX ?= /vol/nirobots
+CFLAGS += -fPIC
 
 .PHONY: all
 all: spacenavi lib
